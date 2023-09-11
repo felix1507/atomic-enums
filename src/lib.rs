@@ -1,5 +1,8 @@
 #![cfg_attr(not(test), no_std)]
-
+//! This crate provides an `AtomicEnum`.
+//! This can only be used with enumerations in which the individual fields are assigned `u16` values.
+//! 
+//! The `gen_atomic_enum!` macro is provided which can be used to create a valid enumeration.
 use core::{
     fmt::Debug,
     marker::PhantomData,
@@ -8,8 +11,22 @@ use core::{
 
 pub use atomic_enum_derive::Atomize;
 
+/// The trait needs to be implemented for enumeration which shall be used with `AtomicEnum`.
+/// Additionally the traits `Into<u16>` and `From<u16>` have to be implemented.
+/// 
+/// An derive macro is implemented, make shure that you have a field with the name `UnknownField`
+/// is constructed!
 pub trait Atomize: Into<u16> + From<u16> {}
 
+
+/// Stores a atomic enumeration.
+/// ## Generic Parameters
+/// - `E`
+///   -  `E` must implement the trait `Atomize` and with it, the traits `From<u16> + Inti<u16>`
+/// ## Example Usage
+/// ```
+/// // TODO
+/// ```
 pub struct AtomicEnum<E>(AtomicU16, PhantomData<E>);
 
 impl<E: Atomize> AtomicEnum<E> {
@@ -63,3 +80,5 @@ macro_rules! gen_atomic_enum {
         }
     };
 }
+
+
