@@ -11,3 +11,6 @@ description = "Provides atomic enumerations."
 
 [dependencies]
 atomic-enum-derive = { version = "0.1.0" }
+
+[dev-dependencies]
+paste = "*"
