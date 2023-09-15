@@ -1,5 +1,155 @@
+//! This crate provides an `AtomicEnum`.
+//! This can only be used with C like enumerations.
+//!
+//! The `gen_atomic_enum!` macro is provided which can be used to create a valid enumeration.
 use core::marker::PhantomData;
 use core::sync::atomic::{self, Ordering};
+
+/// The trait must be implemented for enumerations which shall be used with an `AtomicEnum`.
+/// Additionally the traits `Into<u16>` and `TryFrom<u16>` have to be implemented.
+pub trait Atomize<T>: TryFrom<T> + Into<T> {}
+
+/// This trait must be implemented for the underlying atomic type.
+///
+/// The trait is already implemented for:
+/// - `AtomicU8`
+/// - `AtomicU16`
+/// - `AtomicU32`
+/// - `AtomicU64` with the `u64` feature.
+/// - `AtomicUsize` with the `usize` feature.
+pub trait AtomicOps<T> {
+    fn atomic_new(v: T) -> Self;
+
+    fn atomic_load(&self, order: Ordering) -> T;
+
+    fn atomic_store(&self, v: T, order: Ordering);
+
+    fn atomic_swap(&self, v: T, order: Ordering) -> T;
+
+    fn atomic_compare_exchange(
+        &self,
+        curr: T,
+        new: T,
+        success: Ordering,
+        failure: Ordering,
+    ) -> Result<T, T>;
+}
+
+/// The `AtomicEnum` is used to store values of an C like enumeration in
+/// an atomic type.
+pub struct AtomicEnum<E, A, U>(A, PhantomData<E>, PhantomData<U>);
+
+impl<E, A, U> AtomicEnum<E, A, U>
+where
+    E: TryFrom<U> + Into<U>,
+    A: AtomicOps<U>,
+    U: Copy,
+{
+    /// Create a new atomic enumeration.
+    ///
+    /// ## Params
+    /// - v: The value with which the enumeration is to be initialized
+    ///
+    /// ## Returns
+    /// A new `AtomicEnum`
+    pub fn new(v: E) -> Self {
+        Self(A::atomic_new(v.into()), PhantomData, PhantomData)
+    }
+
+    /// Load the currently stored value of the atomic enum
+    ///
+    /// The following is copyed from the offical documentation.<br>
+    /// *`load` takes an [`Ordering`] argument which describes the memory ordering of this operation.
+    /// Possible values are [`SeqCst`], [`Acquire`] and [`Relaxed`].*
+    ///
+    ///  ## Panics
+    ///
+    /// *Panics if `order` is [`Release`] or [`AcqRel`].*
+    ///
+    /// ## Example
+    /// ```
+    /// ```
+    pub fn load(&self, order: Ordering) -> Option<E> {
+        match self.0.atomic_load(order).try_into() {
+            Ok(e) => Some(e),
+            Err(_) => None,
+        }
+    }
+
+    pub fn store(&self, val: E, order: Ordering) {
+        self.0.atomic_store(val.into(), order)
+    }
+
+    pub fn swap(&self, val: E, order: Ordering) -> Option<E> {
+        match self.0.atomic_swap(val.into(), order).try_into() {
+            Ok(en) => Some(en),
+            Err(_) => None,
+        }
+    }
+
+    pub fn compare_exchange(
+        &self,
+        current: E,
+        new: E,
+        success: Ordering,
+        failure: Ordering,
+    ) -> Result<Option<E>, Option<E>> {
+        match self
+            .0
+            .atomic_compare_exchange(current.into(), new.into(), success, failure)
+        {
+            Ok(v) => match v.try_into() {
+                Ok(e) => Ok(Some(e)),
+                Err(_) => Ok(None),
+            },
+            Err(v) => match v.try_into() {
+                Ok(e) => Err(Some(e)),
+                Err(_) => Err(None),
+            },
+        }
+    }
+}
+
+#[macro_export]
+/// This macro can be used to generate a C like enumeration,
+/// which automaticly implements `TryFrom<typ>` & `Into<typ>`
+macro_rules! gen_atomic_enum2 {
+    ($b_ty:ty, $name:ident: $($val:ident: $num:expr)*) => {
+        #[repr($b_ty)]
+        enum $name {
+            $(
+                $val = $num,
+            )*
+        }
+
+        impl From<$name> for $b_ty {
+            fn from(value: $name) -> Self {
+                value as $b_ty
+            }
+        }
+    };
+}
+
+gen_atomic_enum2!(u16, States:
+    Idle: 0
+    Running: 1
+    Paused: 2
+    Stopped: 3
+);
+
+impl TryFrom<u16> for States {
+    type Error = ();
+
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Idle),
+            1 => Ok(Self::Running),
+            2 => Ok(Self::Paused),
+            3 => Ok(Self::Stopped),
+            _ => Err(()),
+        }
+    }
+}
 
 macro_rules! gen_atomic_ops_impls {
     ($($at:ty, $typ:ty, $name:ident)*) => {
@@ -42,77 +192,6 @@ gen_atomic_ops_impls!(atomic::AtomicUsize, usize, AtomicEnumUsize);
 
 #[cfg(feature = "u64")]
 gen_atomic_ops_impls!(atomic::AtomicU64, u64, AtomicEnumU64);
-
-pub trait AtomicOps<T> {
-    fn atomic_new(v: T) -> Self;
-
-    fn atomic_load(&self, order: Ordering) -> T;
-
-    fn atomic_store(&self, v: T, order: Ordering);
-
-    fn atomic_swap(&self, v: T, order: Ordering) -> T;
-
-    fn atomic_compare_exchange(
-        &self,
-        curr: T,
-        new: T,
-        success: Ordering,
-        failure: Ordering,
-    ) -> Result<T, T>;
-}
-
-pub struct AtomicEnum<E, A, U>(A, PhantomData<E>, PhantomData<U>);
-
-impl<E, A, U> AtomicEnum<E, A, U>
-where
-    E: TryFrom<U> + Into<U>,
-    A: AtomicOps<U>,
-    U: Copy,
-{
-    pub fn new(v: E) -> Self {
-        Self(A::atomic_new(v.into()), PhantomData, PhantomData)
-    }
-
-    pub fn load(&self, order: Ordering) -> Option<E> {
-        match self.0.atomic_load(order).try_into() {
-            Ok(e) => Some(e),
-            Err(_) => None,
-        }
-    }
-
-    pub fn store(&self, val: E, order: Ordering) {
-        self.0.atomic_store(val.into(), order)
-    }
-
-    pub fn swap(&self, val: E, order: Ordering) -> Option<E> {
-        match self.0.atomic_swap(val.into(), order).try_into() {
-            Ok(en) => Some(en),
-            Err(_) => None,
-        }
-    }
-
-    pub fn compare_exchange(
-        &self,
-        current: E,
-        new: E,
-        success: Ordering,
-        failure: Ordering,
-    ) -> Result<Option<E>, Option<E>> {
-        match self
-            .0
-            .atomic_compare_exchange(current.into(), new.into(), success, failure)
-        {
-            Ok(v) => match v.try_into() {
-                Ok(e) => Ok(Some(e)),
-                Err(_) => Ok(None),
-            },
-            Err(v) => match v.try_into() {
-                Ok(e) => Err(Some(e)),
-                Err(_) => Err(None),
-            },
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {

@@ -3,7 +3,7 @@
 //! This can only be used with enumerations in which the individual fields are assigned `u16` values.
 //!
 //! The `gen_atomic_enum!` macro is provided which can be used to create a valid enumeration.
-mod lib2;
+pub mod lib2;
 
 use core::{
     fmt::Debug,
