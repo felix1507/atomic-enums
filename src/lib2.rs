@@ -37,6 +37,12 @@ gen_atomic_ops_impls!(
     atomic::AtomicU32, u32, AtomicEnumU32
 );
 
+#[cfg(feature = "usize")]
+gen_atomic_ops_impls!(atomic::AtomicUsize, usize, AtomicEnumUsize);
+
+#[cfg(feature = "u64")]
+gen_atomic_ops_impls!(atomic::AtomicU64, u64, AtomicEnumU64);
+
 pub trait AtomicOps<T> {
     fn atomic_new(v: T) -> Self;
 
@@ -120,7 +126,7 @@ mod tests {
     use super::*;
 
     macro_rules! gen_tests {
-        ($($bty:ty, $aty:ty)*) => {
+        ($($bty:ty, $aty:ty, $abasety:ty)*) => {
             $(
                 impl TryFrom<$bty> for TestEnum {
                     type Error = ();
@@ -141,6 +147,103 @@ mod tests {
                         value as Self
                     }
                 }
+
+                item!{
+                    #[test]
+                    fn [<new_$bty>]() {
+                        let new_enum = $aty::new(TestEnum::Init);
+
+                        assert_eq!(new_enum.0.load(Relaxed), TestEnum::Init.into());
+                    }
+
+                    #[test]
+                    fn [<load_$bty>]() {
+                        let test_enum: $aty<TestEnum> = $aty {
+                            0: $abasety::new(TestEnum::Idle.into()),
+                            1: PhantomData,
+                            2: PhantomData,
+                        };
+
+                        let result = test_enum.load(Relaxed);
+                        assert!(result.is_some(), "Must return Some(TestEnum::Idle)");
+
+                        let result = result.unwrap();
+                        assert_eq!(result, TestEnum::Idle);
+                    }
+
+                    #[test]
+                    fn [<store_$bty>]() {
+                        let test_enum: $aty<TestEnum> = $aty {
+                            0: $abasety::new(TestEnum::Stopped.into()),
+                            1: PhantomData,
+                            2: PhantomData,
+                        };
+
+                        test_enum.store(TestEnum::Idle, Relaxed);
+
+                        assert_eq!(test_enum.0.load(Relaxed), TestEnum::Idle.into());
+                    }
+
+                    #[test]
+                    fn [<cmp_exc_false_$bty>]() {
+                        let test_enum: $aty<TestEnum> = $aty {
+                            0: $abasety::new(TestEnum::Running.into()),
+                            1: PhantomData,
+                            2: PhantomData,
+                        };
+
+                        let result =
+                            test_enum.compare_exchange(TestEnum::Idle, TestEnum::Running, Relaxed, Relaxed);
+                        assert!(result.is_err());
+
+                        let result = result.unwrap_err();
+                        assert!(result.is_some());
+
+                        let result = result.unwrap();
+                        assert_eq!(result, TestEnum::Running);
+
+                        assert_eq!(test_enum.0.load(Relaxed), TestEnum::Running.into())
+                    }
+
+                    #[test]
+                    fn [<cmp_exc_true_$bty>]() {
+                        let test_enum: $aty<TestEnum> = $aty {
+                            0: $abasety::new(TestEnum::Running.into()),
+                            1: PhantomData,
+                            2: PhantomData,
+                        };
+
+                        let result =
+                            test_enum.compare_exchange(TestEnum::Running, TestEnum::Idle, Relaxed, Relaxed);
+                        assert!(result.is_ok());
+
+                        let result = result.unwrap();
+                        assert!(result.is_some());
+
+                        let result = result.unwrap();
+                        assert_eq!(result, TestEnum::Running);
+
+                        assert_eq!(test_enum.0.load(Relaxed), TestEnum::Idle.into());
+                    }
+
+                    #[test]
+                    fn [<swap_$bty>]() {
+                        let test_enum: $aty<TestEnum> = $aty {
+                            0: $abasety::new(TestEnum::Init.into()),
+                            1: PhantomData,
+                            2: PhantomData,
+                        };
+
+                        let result = test_enum.swap(TestEnum::Stopped, Relaxed);
+
+                        assert!(result.is_some());
+
+                        let result = result.unwrap();
+                        assert_eq!(result, TestEnum::Init);
+
+                        assert_eq!(test_enum.0.load(Relaxed), TestEnum::Stopped.into());
+                    }
+                }
             )*
         };
     }
@@ -153,136 +256,15 @@ mod tests {
         Stopped = 4,
     }
 
-    impl TryFrom<u8> for TestEnum {
-        type Error = ();
+    gen_tests!(
+        u8, AtomicEnumU8, atomic::AtomicU8
+        u16, AtomicEnumU16, atomic::AtomicU16
+        u32, AtomicEnumU32, atomic::AtomicU32
+    );
 
-        fn try_from(value: u8) -> Result<Self, Self::Error> {
-            match value {
-                1 => Ok(Self::Init),
-                2 => Ok(Self::Idle),
-                3 => Ok(Self::Running),
-                4 => Ok(Self::Stopped),
-                _ => Err(()),
-            }
-        }
-    }
+    #[cfg(feature = "u64")]
+    gen_tests!(u64, AtomicEnumU64, atomic::AtomicU64);
 
-    impl From<TestEnum> for u8 {
-        fn from(value: TestEnum) -> Self {
-            value as Self
-        }
-    }
-
-    impl TryFrom<u16> for TestEnum {
-        type Error = ();
-        fn try_from(value: u16) -> Result<Self, Self::Error> {
-            match value {
-                1 => Ok(Self::Init),
-                2 => Ok(Self::Idle),
-                3 => Ok(Self::Running),
-                4 => Ok(Self::Stopped),
-                _ => Err(()),
-            }
-        }
-    }
-    impl From<TestEnum> for u16 {
-        fn from(value: TestEnum) -> Self {
-            value as Self
-        }
-    }
-
-    #[test]
-    fn u8_new() {
-        let new_enum = AtomicEnumU8::new(TestEnum::Init);
-
-        assert_eq!(new_enum.0.load(Relaxed), TestEnum::Init.into());
-    }
-
-    #[test]
-    fn u8_load() {
-        let test_enum: AtomicEnumU8<TestEnum> = AtomicEnumU8 {
-            0: atomic::AtomicU8::new(TestEnum::Idle.into()),
-            1: PhantomData,
-            2: PhantomData,
-        };
-
-        let result = test_enum.load(Relaxed);
-        assert!(result.is_some(), "Must return Some(TestEnum::Idle)");
-
-        let result = result.unwrap();
-        assert_eq!(result, TestEnum::Idle);
-    }
-
-    #[test]
-    fn u8_store() {
-        let test_enum: AtomicEnumU8<TestEnum> = AtomicEnumU8 {
-            0: atomic::AtomicU8::new(TestEnum::Stopped.into()),
-            1: PhantomData,
-            2: PhantomData,
-        };
-
-        test_enum.store(TestEnum::Idle, Relaxed);
-
-        assert_eq!(test_enum.0.load(Relaxed), TestEnum::Idle.into());
-    }
-
-    #[test]
-    fn u8_cmp_exc_false() {
-        let test_enum: AtomicEnumU8<TestEnum> = AtomicEnumU8 {
-            0: atomic::AtomicU8::new(TestEnum::Running.into()),
-            1: PhantomData,
-            2: PhantomData,
-        };
-
-        let result =
-            test_enum.compare_exchange(TestEnum::Idle, TestEnum::Running, Relaxed, Relaxed);
-        assert!(result.is_err());
-
-        let result = result.unwrap_err();
-        assert!(result.is_some());
-
-        let result = result.unwrap();
-        assert_eq!(result, TestEnum::Running);
-
-        assert_eq!(test_enum.0.load(Relaxed), TestEnum::Running.into())
-    }
-
-    #[test]
-    fn u8_cmp_exc_true() {
-        let test_enum: AtomicEnumU8<TestEnum> = AtomicEnumU8 {
-            0: atomic::AtomicU8::new(TestEnum::Running.into()),
-            1: PhantomData,
-            2: PhantomData,
-        };
-
-        let result =
-            test_enum.compare_exchange(TestEnum::Running, TestEnum::Idle, Relaxed, Relaxed);
-        assert!(result.is_ok());
-
-        let result = result.unwrap();
-        assert!(result.is_some());
-
-        let result = result.unwrap();
-        assert_eq!(result, TestEnum::Running);
-
-        assert_eq!(test_enum.0.load(Relaxed), TestEnum::Idle.into());
-    }
-
-    #[test]
-    fn u8_swap() {
-        let test_enum: AtomicEnumU8<TestEnum> = AtomicEnumU8 {
-            0: atomic::AtomicU8::new(TestEnum::Init.into()),
-            1: PhantomData,
-            2: PhantomData,
-        };
-
-        let result = test_enum.swap(TestEnum::Stopped, Relaxed);
-
-        assert!(result.is_some());
-
-        let result = result.unwrap();
-        assert_eq!(result, TestEnum::Init);
-
-        assert_eq!(test_enum.0.load(Relaxed), TestEnum::Stopped.into());
-    }
+    #[cfg(feature = "usize")]
+    gen_tests!(usize, AtomicEnumUsize, atomic::AtomicUsize);
 }
