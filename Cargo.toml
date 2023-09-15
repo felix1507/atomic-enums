@@ -4,7 +4,7 @@ version = "0.1.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 keywords = ["atomic", "enum"]
-repository = "https://github.com/felix1507/atomic-enum"
+repository = "https://github.com/felix1507/atomic-enums"
 description = "Provides atomic enumerations."
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
