@@ -1,7 +1,9 @@
+#![cfg_attr(not(test), no_std)]
 //! This crate provides an `AtomicEnum`.
 //! This can only be used with C like enumerations.
 //!
 //! The `gen_atomic_enum!` macro is provided which can be used to create a valid enumeration.
+use core::fmt::Debug;
 use core::marker::PhantomData;
 use core::sync::atomic::{self, Ordering};
 
@@ -110,12 +112,33 @@ where
     }
 }
 
-#[macro_export]
+impl<E, A, U> Debug for AtomicEnum<E, A, U>
+where
+    E: TryFrom<U> + Into<U> + Debug,
+    A: AtomicOps<U>,
+    U: Copy,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let mut dbg_info = f.debug_tuple("AtomicEnum");
+        let tmp = self.load(Ordering::Relaxed);
+
+        match tmp {
+            Some(v) => dbg_info.field(&v),
+            None => dbg_info.field(&"Invalid value!"),
+        };
+
+        dbg_info.finish()
+    }
+}
+
 /// This macro can be used to generate a C like enumeration,
-/// which automaticly implements `TryFrom<typ>` & `Into<typ>`
-macro_rules! gen_atomic_enum2 {
-    ($b_ty:ty, $name:ident: $($val:ident: $num:expr)*) => {
+/// which automaticly implements `impl From<YourStruct> for <youre base type> { ... }` and `Atomize`.
+/// You must implement the trait `impl TryFrom<youre base type> for YourStruct` to use the enumeration.
+#[macro_export]
+macro_rules! gen_atomic_enum {
+    ($name:ident, $b_ty:ty: $($val:ident: $num:expr)*) => {
         #[repr($b_ty)]
+        #[derive(Debug)]
         enum $name {
             $(
                 $val = $num,
@@ -127,28 +150,9 @@ macro_rules! gen_atomic_enum2 {
                 value as $b_ty
             }
         }
+
+        impl Atomize<$b_ty> for $name {}
     };
-}
-
-gen_atomic_enum2!(u16, States:
-    Idle: 0
-    Running: 1
-    Paused: 2
-    Stopped: 3
-);
-
-impl TryFrom<u16> for States {
-    type Error = ();
-
-    fn try_from(value: u16) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::Idle),
-            1 => Ok(Self::Running),
-            2 => Ok(Self::Paused),
-            3 => Ok(Self::Stopped),
-            _ => Err(()),
-        }
-    }
 }
 
 macro_rules! gen_atomic_ops_impls {
