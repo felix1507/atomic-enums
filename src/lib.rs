@@ -241,11 +241,7 @@ mod tests {
 
                     #[test]
                     fn [<load_$bty>]() {
-                        let test_enum: $aty<TestEnum> = $aty {
-                            0: $abasety::new(TestEnum::Idle.into()),
-                            1: PhantomData,
-                            2: PhantomData,
-                        };
+                        let test_enum: $aty<TestEnum> = init_enum(TestEnum::Idle.into());
 
                         let result = test_enum.load(Relaxed);
                         assert!(result.is_some(), "Must return Some(TestEnum::Idle)");
@@ -256,11 +252,7 @@ mod tests {
 
                     #[test]
                     fn [<store_$bty>]() {
-                        let test_enum: $aty<TestEnum> = $aty {
-                            0: $abasety::new(TestEnum::Stopped.into()),
-                            1: PhantomData,
-                            2: PhantomData,
-                        };
+                        let test_enum: $aty<TestEnum> = init_enum(TestEnum::Stopped.into());
 
                         test_enum.store(TestEnum::Idle, Relaxed);
 
@@ -269,11 +261,7 @@ mod tests {
 
                     #[test]
                     fn [<cmp_exc_false_$bty>]() {
-                        let test_enum: $aty<TestEnum> = $aty {
-                            0: $abasety::new(TestEnum::Running.into()),
-                            1: PhantomData,
-                            2: PhantomData,
-                        };
+                        let test_enum: $aty<TestEnum> = init_enum(TestEnum::Running.into());
 
                         let result =
                             test_enum.compare_exchange(TestEnum::Idle, TestEnum::Running, Relaxed, Relaxed);
@@ -290,11 +278,7 @@ mod tests {
 
                     #[test]
                     fn [<cmp_exc_true_$bty>]() {
-                        let test_enum: $aty<TestEnum> = $aty {
-                            0: $abasety::new(TestEnum::Running.into()),
-                            1: PhantomData,
-                            2: PhantomData,
-                        };
+                        let test_enum: $aty<TestEnum> = init_enum(TestEnum::Running.into());
 
                         let result =
                             test_enum.compare_exchange(TestEnum::Running, TestEnum::Idle, Relaxed, Relaxed);
@@ -311,11 +295,7 @@ mod tests {
 
                     #[test]
                     fn [<swap_$bty>]() {
-                        let test_enum: $aty<TestEnum> = $aty {
-                            0: $abasety::new(TestEnum::Init.into()),
-                            1: PhantomData,
-                            2: PhantomData,
-                        };
+                        let test_enum: $aty<TestEnum> = init_enum(TestEnum::Init.into());
 
                         let result = test_enum.swap(TestEnum::Stopped, Relaxed);
 
@@ -326,9 +306,46 @@ mod tests {
 
                         assert_eq!(test_enum.0.load(Relaxed), TestEnum::Stopped.into());
                     }
+
+                    #[test]
+                    fn [<load_invalid_$bty>]() {
+                        let test_enum: $aty<TestEnum> = init_enum(32);
+
+                        let result = test_enum.load(Relaxed);
+
+                        assert!(result.is_none());
+                    }
+
+                    #[test]
+                    fn [<swap_comp_invalid_$bty>]() {
+                        let test_enum: $aty<TestEnum> = init_enum(255);
+
+                        let result = test_enum.swap(TestEnum::Running, Relaxed);
+
+                        assert!(result.is_none());
+                        assert_eq!(test_enum.0.load(Relaxed), TestEnum::Running.into());
+                    }
+
+                    #[test]
+                    fn [<compare_exchange_false_invalid_$bty>]() {
+                        let test_enum: $aty<TestEnum> = init_enum(64);
+
+                        let result = test_enum.compare_exchange(TestEnum::Running, TestEnum::Idle, Relaxed, Relaxed);
+
+                        assert!(result.is_err());
+                        assert!(result.unwrap_err().is_none());
+                    }
                 }
             )*
         };
+    }
+
+    fn init_enum<A: AtomicOps<U>, U>(val: U) -> AtomicEnum<TestEnum, A, U> {
+        AtomicEnum {
+            0: A::atomic_new(val),
+            1: PhantomData,
+            2: PhantomData,
+        }
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]

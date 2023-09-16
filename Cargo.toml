@@ -15,7 +15,6 @@ u64 = []
 usize = []
 
 [dependencies]
-atomic-enum-derive = { version = "0.2.0", path = "../atomic-enum-derive" }
 
 [dev-dependencies]
 paste = "*"
