@@ -16,4 +16,4 @@ u64 = []
 [dependencies]
 
 [dev-dependencies]
-paste = "*"
+paste = "0.1.0"
