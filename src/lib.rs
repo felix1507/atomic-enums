@@ -54,22 +54,72 @@ where
     ///
     /// ## Returns
     /// A new `AtomicEnum`
+    ///
+    /// ## Example
+    /// ```
+    /// use atomic_enums::{gen_atomic_enum, AtomicEnumU32};
+    ///
+    /// gen_atomic_enum!(State, u32:
+    ///     Running: 2
+    ///     Paused: 3
+    /// );
+    ///
+    /// impl TryFrom<u32> for State {
+    ///     type Error = ();
+    ///
+    ///     fn try_from(v: u32) -> Result<Self, Self::Error> {
+    ///         match v {
+    ///             2 => Ok(Self::Running),
+    ///             3 => Ok(Self::Paused),
+    ///             _ => Err(()),
+    ///         }
+    ///     }
+    /// }
+    ///
+    /// let state = AtomicEnumU32::new(State::Running);
+    ///  /* Do whatever you want to do... */
+    /// ```
     pub fn new(v: E) -> Self {
         Self(A::atomic_new(v.into()), PhantomData, PhantomData)
     }
 
     /// Load the currently stored value of the atomic enum
     ///
-    /// The following is copyed from the offical documentation.<br>
+    /// The following is copyed from the offical documentation of [`atomic::AtomicU32`].
+    ///
     /// *`load` takes an [`Ordering`] argument which describes the memory ordering of this operation.
-    /// Possible values are [`SeqCst`], [`Acquire`] and [`Relaxed`].*
+    /// Possible values are [`Ordering::SeqCst`], [`Ordering::Acquire`] and [`Ordering::Relaxed`].*
     ///
     ///  ## Panics
     ///
-    /// *Panics if `order` is [`Release`] or [`AcqRel`].*
+    /// *Panics if `order` is [`Ordering::Release`] or [`Ordering::AcqRel`].*
     ///
     /// ## Example
     /// ```
+    /// use atomic_enums::{gen_atomic_enum, AtomicEnumU32};
+    ///
+    /// use core::sync::atomic::Ordering::Relaxed;
+    ///
+    /// gen_atomic_enum!(State, u32:
+    ///     Running: 2
+    ///     Paused: 3
+    /// );
+    ///
+    /// impl TryFrom<u32> for State {
+    ///     type Error = ();
+    ///
+    ///     fn try_from(v: u32) -> Result<Self, Self::Error> {
+    ///         match v {
+    ///             2 => Ok(Self::Running),
+    ///             3 => Ok(Self::Paused),
+    ///             _ => Err(()),
+    ///         }
+    ///     }
+    /// }
+    ///
+    /// let state = AtomicEnumU32::new(State::Paused);
+    ///
+    /// assert_eq!(state.load(Relaxed).unwrap(), State::Paused);
     /// ```
     pub fn load(&self, order: Ordering) -> Option<E> {
         match self.0.atomic_load(order).try_into() {
@@ -78,6 +128,47 @@ where
         }
     }
 
+    /// Store the passed value in the atomic enumeration
+    ///
+    /// The following is copyed from the offical documentation of [`atomic::AtomicU32::store`].
+    ///
+    /// `store` takes an [`Ordering`] argument which describes the memory ordering of this operation.
+    ///  
+    /// *Possible values are [`Ordering::SeqCst`], [`Ordering::Release`] and [`Ordering::Relaxed`].*
+    ///
+    /// ## Panics
+    ///
+    /// *Panics if `order` is [`Acquire`] or [`AcqRel`].*
+    ///
+    /// ## Example
+    /// ```
+    /// use atomic_enums::{gen_atomic_enum, AtomicEnumU32};
+    ///
+    /// use core::sync::atomic::Ordering::Relaxed;
+    ///
+    /// gen_atomic_enum!(State, u32:
+    ///     Running: 2
+    ///     Paused: 3
+    /// );
+    ///
+    /// impl TryFrom<u32> for State {
+    ///     type Error = ();
+    ///
+    ///     fn try_from(v: u32) -> Result<Self, Self::Error> {
+    ///         match v {
+    ///             2 => Ok(Self::Running),
+    ///             3 => Ok(Self::Paused),
+    ///             _ => Err(()),
+    ///         }
+    ///     }
+    /// }
+    ///
+    /// let state = AtomicEnumU32::new(State::Paused);
+    ///
+    /// state.store(State::Running, Relaxed);
+    ///
+    /// assert_eq!(state.load(Relaxed).unwrap(), State::Running);
+    /// ```
     pub fn store(&self, val: E, order: Ordering) {
         self.0.atomic_store(val.into(), order)
     }
@@ -134,11 +225,41 @@ where
 /// This macro can be used to generate a C like enumeration,
 /// which automaticly implements `impl From<YourStruct> for <youre base type> { ... }` and `Atomize`.
 /// You must implement the trait `impl TryFrom<youre base type> for YourStruct` to use the enumeration.
+///
+/// ## Params
+/// 1. The name, which the enumeration
+/// 2. The underlying type ([`u8`], [`u16`], [`u32`], [`u64`], [`usize`])
+/// 3. List of, `EnumerationField`: `number`
+///
+/// ## Example
+/// ```
+/// use atomic_enums::gen_atomic_enum;
+///
+/// gen_atomic_enum!(State, u32:
+///     Running: 2
+///     Paused: 3
+/// );
+///
+/// impl TryFrom<u32> for State {
+///     type Error = ();
+///
+///     fn try_from(v: u32) -> Result<Self, Self::Error> {
+///         match v {
+///             2 => Ok(Self::Running),
+///             3 => Ok(Self::Paused),
+///             _ => Err(()),
+///         }
+///     }
+/// }
+///
+/// assert_eq!(State::Running as u32, 2);
+/// assert_eq!(State::Paused as u32, 3);
+/// ```
 #[macro_export]
 macro_rules! gen_atomic_enum {
     ($name:ident, $b_ty:ty: $($val:ident: $num:expr)*) => {
         #[repr($b_ty)]
-        #[derive(Debug)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         enum $name {
             $(
                 $val = $num,
@@ -151,7 +272,7 @@ macro_rules! gen_atomic_enum {
             }
         }
 
-        impl Atomize<$b_ty> for $name {}
+        impl atomic_enums::Atomize<$b_ty> for $name {}
     };
 }
 
