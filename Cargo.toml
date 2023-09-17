@@ -10,9 +10,8 @@ description = "Provides atomic enumerations."
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["u64", "usize"]
+default = ["u64"]
 u64 = []
-usize = []
 
 [dependencies]
 
